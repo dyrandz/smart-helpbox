@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app
+    networks:
+      - appnet
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - LM_STUDIO_URL=http://host.docker.internal:1234
+
+networks:
+  appnet:

@@ -1,0 +1,68 @@
+[
+  {
+    "title": "Register Client",
+    "description": "Allows users to add a new client to the CRM system.",
+    "url": "/clients/register",
+    "tags": ["client", "registration", "new client", "add client", "create client", "crm", "dyrandz"]
+  },
+  {
+    "title": "View Contacts",
+    "description": "Displays all contact information stored in the system.",
+    "url": "/contacts",
+    "tags": ["contacts", "view contacts", "contact list", "all contacts", "directory"]
+  },
+  {
+    "title": "Dashboard",
+    "description": "The main analytics and overview page for logged-in users.",
+    "url": "/dashboard",
+    "tags": ["home", "main", "overview", "analytics", "statistics", "summary"]
+  },
+  {
+    "title": "View Specific Contact",
+    "description": "Displays detailed information about a specific contact.",
+    "url": "/contacts/view/:id",
+    "tags": ["contact details", "view contact", "contact info", "specific contact", "contact profile"]
+  },
+  {
+    "title": "Edit Contact",
+    "description": "Allows users to update existing contact information.",
+    "url": "/contacts/edit/:id",
+    "tags": ["update contact", "modify contact", "edit contact", "change contact", "contact edit"]
+  },
+  {
+    "title": "View Task Logs",
+    "description": "Displays all background task logs for all users.",
+    "url": "/tasks/logs",
+    "tags": ["logs", "task logs", "activity logs", "system logs", "background tasks", "monitoring"]
+  },
+  {
+    "title": "Create Loan Application",
+    "description": "Allows users to create a new loan application.",
+    "url": "/loans/create",
+    "tags": ["loan", "new loan", "apply loan", "loan application", "create loan", "borrow"]
+  },
+  {
+    "title": "Open Loan Calculator",
+    "description": "Allows users to open the loan calculator.",
+    "url": "/loans/calculator",
+    "tags": ["calculator", "loan calculator", "calculate loan", "loan estimate", "loan tool", "new feature"]
+  },
+  {
+    "title": "Business Settings",
+    "description": "Allows users to manage business settings.",
+    "url": "/settings/business",
+    "tags": ["settings", "business settings", "configuration", "preferences", "company settings", "setup", "new feature"]
+  },
+  {
+    "title": "View specific organisation",
+    "description": "Displays detailed information about a specific organisation.",
+    "url": "/organisations/:id/page",
+    "tags": ["organisation details", "view organisation", "organisation info", "specific organisation", "organisation profile"]
+  },
+  {
+    "title": "view pdf",
+    "description": "Displays a PDF document.",
+    "url": "/pdf/:id",
+    "tags": ["pdf", "view pdf", "pdf document", "specific pdf", "pdf profile"]
+  }
+]

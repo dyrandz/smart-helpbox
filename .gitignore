@@ -172,3 +172,15 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Vector Store
+app/vector_store/
+vector_store/
+vector_store_hash.txt
+
+# Docker
+.docker/
+
+# Environment variables
+.env
+.env.local

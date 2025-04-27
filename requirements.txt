@@ -1,0 +1,17 @@
+# Working dependencies
+llama-index-core==0.12.32
+llama-index-embeddings-huggingface==0.5.3
+llama-index-vector-stores-faiss==0.3.0
+faiss-cpu
+sentence-transformers
+fastapi
+uvicorn
+requests
+
+# llama-index==0.10.59
+# faiss-cpu
+# sentence-transformers
+# transformers==4.37.2
+# fastapi
+# uvicorn
+# requests

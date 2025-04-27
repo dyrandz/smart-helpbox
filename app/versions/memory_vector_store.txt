@@ -1,0 +1,110 @@
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import requests, json, os
+
+from llama_index.core import VectorStoreIndex, Document
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.vector_stores.faiss.base import FaissVectorStore
+from llama_index.core.storage.storage_context import StorageContext
+
+app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+# Use host.docker.internal when running in Docker, localhost when running locally
+LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234")
+MODEL = "deepseek-r1-distill-qwen-7b"
+ROUTE_DATA_PATH = "routes.json"
+
+# Load and convert to Documents
+with open(ROUTE_DATA_PATH, "r") as f:
+    route_data = json.load(f)
+
+documents = [
+    Document(text=f"{r['title']}. {r['description']}", metadata={"url": r["url"], "title": r["title"]})
+    for r in route_data
+]
+
+embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+index = VectorStoreIndex.from_documents(documents, embed_model=embed_model)
+retriever = index.as_retriever(similarity_top_k=3)
+
+@app.get("/ask")
+def ask(query: str = Query(..., description="User input intent")):
+    try:
+        # Step 1: Retrieve only relevant content
+        nodes = retriever.retrieve(query)
+
+        if not nodes:
+            return {"llm_response": "No relevant routes found."}
+
+        # Step 2: Build context string for LLM
+        context = ""
+        for node in nodes:
+            meta = node.metadata
+            context += f"- {meta.get('title')} ({meta.get('url')}): {node.text.strip()}\n"
+
+        # Step 3: Strict prompt for clean responses
+        prompt = f"""You are a smart helpbox assistant. Your role is to provide quick, precise navigation suggestions.
+
+User Query: "{query}"
+
+Available Routes:
+{context}
+
+CRITICAL INSTRUCTIONS:
+1. Your response must ONLY contain the suggested page(s) in the exact format below
+2. DO NOT include any thinking process, explanations, or tags
+3. DO NOT use <think> tags or any other markup
+4. DO NOT include phrases like "I'll respond with" or "I should"
+5. For single match: "Suggested page: [Title] - [URL] - [Description]"
+6. For multiple matches: "Suggested pages: [Title1] - [URL1] - [Description1], [Title2] - [URL2] - [Description2]"
+7. If no match: "No matching pages found"
+8. The description should be taken from the route's description field
+
+Example Responses (ONLY return one of these formats):
+"Suggested page: User Management - /users - Allows users to manage their account settings and preferences"
+"Suggested pages: Dashboard - /dashboard - The main analytics and overview page, Analytics - /analytics - View detailed usage statistics"
+"No matching pages found"
+"""
+
+        # Step 4: Call LM Studio API
+        res = requests.post(
+            f"{LM_STUDIO_URL}/v1/chat/completions",
+            json={
+                "model": MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are a strict helpbox assistant. Your response must ONLY contain the suggested page(s) in the exact format specified, with no additional text or thinking process."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2
+            }
+        )
+        response_json = res.json()
+
+        # Debug output
+        print("\n🧠 Final Prompt Sent to LLM:\n", prompt)
+        print("\n📥 Raw LLM Response:\n", response_json)
+
+        # Extract the response from LM Studio's format
+        llm_response = response_json.get("choices", [{}])[0].get("message", {}).get("content", "No answer")
+        
+        # Clean up any thinking tags or process text if they somehow made it through
+        llm_response = llm_response.replace("<think>", "").replace("</think>", "")
+        if "No matching pages found" in llm_response:
+            llm_response = "No matching pages found"
+        elif "Suggested page:" in llm_response or "Suggested pages:" in llm_response:
+            # Keep only the line with the suggestion
+            lines = llm_response.split("\n")
+            llm_response = next((line for line in lines if "Suggested page" in line), llm_response)
+        
+        return {"llm_response": llm_response}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
