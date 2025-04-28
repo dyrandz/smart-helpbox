@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Add base URL configuration at the top
-const BASE_URL = 'https://test.app.com';
+const BASE_URL = 'http://localhost:3001';
 
 // Add URL parameter handling utility function
 function replaceUrlParams(url, params = {}) {
@@ -84,6 +84,7 @@ function fetchSuggestions(query) {
         .then(response => response.json())
         .then(data => {
             hideLoading();
+            console.log('Raw response:', data); // Debug log
             // Pass the entire response object to displaySuggestions
             displaySuggestions(data);
         })
@@ -101,54 +102,37 @@ function fetchSuggestions(query) {
 
 function displaySuggestions(response) {
     suggestionsDiv.innerHTML = '';
-    // Debug log to see the response structure
     console.log('Response received:', response);
-    let explanation = '';
-    // Check if response is a string (old format) or object (new format)
-    if (typeof response === 'string') {
-        if (response === 'No matching pages found') {
-            suggestionsDiv.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
-            suggestionsDiv.style.display = 'block';
-            return;
-        }
-        // Parse the old format response
-        const matches = response.match(/Suggested (?:page|pages): (.*)/);
-        if (!matches) {
-            suggestionsDiv.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
-            suggestionsDiv.style.display = 'block';
-            return;
-        }
-        const suggestions = matches[1].split(', ');
-        suggestions.forEach(suggestion => {
-            const parts = suggestion.split(' - ');
-            if (parts.length < 3) return;
-            const title = parts[0];
-            const relativeUrl = parts[1];
-            const description = parts.slice(2).join(' - ').replace(/Tags:.*$/, '').trim();
-            createSuggestionItem(title, relativeUrl, description);
-        });
-    } else {
-        // Handle new JSON format
-        // Check if we have the expected nested structure
-        if (response && response.llm_response && response.llm_response.suggestions) {
-            const suggestions = response.llm_response.suggestions;
-            explanation = response.llm_response.explanation || '';
-            if (suggestions.length === 0) {
-                suggestionsDiv.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
-                suggestionsDiv.style.display = 'block';
-            } else {
-                suggestions.forEach(suggestion => {
-                    if (suggestion.title && suggestion.url && suggestion.description) {
-                        createSuggestionItem(suggestion.title, suggestion.url, suggestion.description);
-                    }
-                });
-            }
-        } else {
-            // If the structure is not as expected, show no matches
-            suggestionsDiv.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
-            suggestionsDiv.style.display = 'block';
-        }
+    
+    // Check if we have a valid response with suggestions
+    if (!response || !Array.isArray(response.suggestions)) {
+        console.log('Invalid response format');
+        suggestionsDiv.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
+        suggestionsDiv.style.display = 'block';
+        return;
     }
+
+    const suggestions = response.suggestions;
+    const explanation = response.explanation || '';
+
+    console.log('Processing suggestions:', suggestions);
+
+    // Create a container for suggestions
+    const suggestionsContainer = document.createElement('div');
+    suggestionsContainer.className = 'suggestions-container';
+
+    if (suggestions.length === 0) {
+        suggestionsContainer.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
+    } else {
+        suggestions.forEach(suggestion => {
+            console.log('Creating suggestion item:', suggestion);
+            createSuggestionItem(suggestion.title, suggestion.path, suggestion.description);
+        });
+    }
+
+    // Add suggestions container to the main div
+    suggestionsDiv.appendChild(suggestionsContainer);
+
     // Show explanation if present
     if (explanation) {
         const explanationDiv = document.createElement('div');
@@ -156,12 +140,13 @@ function displaySuggestions(response) {
         explanationDiv.textContent = explanation;
         suggestionsDiv.appendChild(explanationDiv);
     }
+
     suggestionsDiv.style.display = 'block';
 }
 
-function createSuggestionItem(title, relativeUrl, description) {
-    // Process the URL: add base URL and replace parameters
-    const fullUrl = `${BASE_URL}${replaceUrlParams(relativeUrl)}`;
+function createSuggestionItem(title, path, description) {
+    // The path is already processed by the backend, just add the base URL
+    const fullUrl = `${BASE_URL}${path}`;
     
     const suggestionItem = document.createElement('div');
     suggestionItem.className = 'suggestion-item';
