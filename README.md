@@ -221,3 +221,5 @@ MIT License — Open source, free to use and modify.
 
 
 Llamaindex (RAG) Guide: https://docs.google.com/presentation/d/1A81x30FEVVAYQIKDVy5bzJERmsPmHDB8bpiHzHf2nXA/edit#slide=id.p
+
+Smart navigation flow: https://docs.google.com/presentation/d/1gO6RhdkJaRhazRNG0E1nTiSLhuZo-vplDjV4h4a7Zog/edit#slide=id.g35167105c61_2_0

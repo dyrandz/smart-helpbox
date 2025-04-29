@@ -4,6 +4,37 @@ const suggestionsDiv = document.getElementById('suggestions');
 const loadingDiv = document.getElementById('loading');
 let abortController = null;
 
+let userInfo = {};
+
+// Role mapping
+const ROLE_MAPPING = {
+    1: 'User',
+    2: 'Admin',
+    3: 'SuperAdmin',
+};
+
+function handleMessage(event) {
+    // Validate event.origin, use local for now
+    if (event.origin !== 'http://localhost:3001' && event.origin !== 'http://127.0.0.1:5500') {
+        console.warn('Untrusted origin:', event.origin);
+        return;
+    }
+
+    const { type, payload } = event.data;
+
+    if (type === 'TO_IFRAME_USER_INFO') {
+        userInfo = payload;
+    }
+}
+
+// Register
+window.addEventListener('message', handleMessage);
+
+// Cleanup post message listener
+window.addEventListener('beforeunload', () => {
+    window.removeEventListener('message', handleMessage);
+});
+
 // Focus on search input when page loads
 document.addEventListener('DOMContentLoaded', () => {
     searchInput.focus();
@@ -42,12 +73,17 @@ function hideLoading() {
 
 // Function to perform the search
 function performSearch() {
+    console.log('userInfo:', userInfo); // Debug log
+
+    const accessTypeId = userInfo.AccessType;
+    const role = ROLE_MAPPING[accessTypeId] || 'UNKNOWN';
+    
     // Cancel any ongoing request
     if (abortController) {
         abortController.abort();
     }
 
-    const query = searchInput.value.trim();
+    const query = `user-role: ${role} | query: ${searchInput.value.trim()}`;
     if (query.length === 0) {
         suggestionsDiv.style.display = 'none';
         return;
@@ -122,7 +158,11 @@ function displaySuggestions(response) {
     suggestionsContainer.className = 'suggestions-container';
 
     if (suggestions.length === 0) {
-        suggestionsContainer.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
+        if (explanation.includes('role')) {
+            suggestionsContainer.innerHTML = '<div class="suggestion-item">You do not have access to view these pages based on your role.</div>';
+        } else {
+            suggestionsContainer.innerHTML = '<div class="suggestion-item">No matching pages found</div>';
+        }
     } else {
         suggestions.forEach(suggestion => {
             console.log('Creating suggestion item:', suggestion);

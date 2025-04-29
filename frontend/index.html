@@ -15,7 +15,10 @@
         <div class="search-container">
             <div class="search-box">
                 <input type="text" id="searchInput" placeholder="What do you want to do?">
-                <button id="searchButton">Go</button>
+                <button id="searchButton" style="display: inline-flex; align-items: center;">
+                    Go
+                    <img src="ai-icon.svg" alt="AI Icon" style="width:24px; height:24px; margin-left:8px; object-fit: contain; display: inline-block;">
+                </button>
             </div>
             <div id="loading" class="loading">Processing...</div>
             <div id="suggestions" class="suggestions"></div>

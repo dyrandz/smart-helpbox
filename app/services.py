@@ -2,14 +2,14 @@ from typing import Dict, Optional
 
 # Dummy data for organizations
 ORGANIZATIONS = {
-    "rf-test": {"id": 1, "name": "RF-Test Organization"},
+    "rf-test": {"id": 14097, "name": "1 Stop Home Loans"},
     "acme-corp": {"id": 2, "name": "ACME Corporation"},
-    "tech-solutions": {"id": 3, "name": "Tech Solutions Ltd"}
+    "tech-solutions": {"id": 3, "name": "The Online Insurance Shop"}
 }
 
 # Dummy data for advisers
 ADVISERS = {
-    "john.doe@example.com": {"id": 101, "name": "John Doe", "email": "john.doe@example.com"},
+    "john.doe@example.com": {"id": 8560531, "name": "John Doe", "email": "john.doe@example.com"},
     "jane.smith@example.com": {"id": 102, "name": "Jane Smith", "email": "jane.smith@example.com"},
     "bob.wilson@example.com": {"id": 103, "name": "Bob Wilson", "email": "bob.wilson@example.com"},
     "bob.wilson2@example.com": {"id": 104, "name": "Bob Wilson", "email": "bob.wilson2@example.com"}
@@ -17,7 +17,7 @@ ADVISERS = {
 
 # Dummy data for clients
 CLIENTS = {
-    "alice.johnson@example.com": {"id": 201, "name": "Alice Johnson", "email": "alice.johnson@example.com"},
+    "alice.johnson@example.com": {"id": 5531911, "name": "Alice Johnson", "email": "alice.johnson@example.com"},
     "charlie.brown@example.com": {"id": 202, "name": "Charlie Brown", "email": "charlie.brown@example.com"},
     "diana.ross@example.com": {"id": 203, "name": "Diana Ross", "email": "diana.ross@example.com"}
 }

@@ -63,7 +63,7 @@
     "title": "View specific organisation by name",
     "description": "Displays detailed information about a specific organisation.",
     "url": "/contact/org/:id/0/details",
-    "hasAccess": ["corporate"],
+    "userRole": ["corporate"],
     "service": "get_organisation_id_by_name",
     "tags": ["organisation details", "view organisation", "organisation info", "specific organisation", "organisation profile"]
   },
@@ -71,7 +71,7 @@
     "title": "View specific adviser by name",
     "description": "Displays detailed information about a specific contact.",
     "url": "/contact/adviser/0/:id/details",
-    "hasAccess": ["corporate"],
+    "userRole": ["corporate"],
     "service": "get_adviser_id_by_name",
     "tags": ["contact details", "view contact", "contact info", "specific contact", "contact profile"]
   },
@@ -79,7 +79,7 @@
     "title": "View specific adviser by email",
     "description": "Displays detailed information about a specific contact.",
     "url": "/contact/adviser/1/:id/details",
-    "hasAccess": ["corporate"],
+    "userRole": ["corporate"],
     "service": "get_adviser_id_by_email",
     "tags": ["contact details", "view contact", "contact info", "specific contact", "contact profile"]
   }, 
@@ -87,7 +87,7 @@
     "title": "View specific client by name",
     "description": "Displays detailed information about a specific client.",
     "url": "/contact/:id/summary",
-    "hasAccess": ["*"],
+    "userRole": ["*"],
     "service": "get_client_id_by_name",
     "tags": ["contact details", "view contact", "contact info", "specific contact", "contact profile"]
   },
@@ -95,7 +95,7 @@
     "title": "View specific client by email",
     "description": "Displays detailed information about a specific client.",
     "url": "/contact/:id/summary",
-    "hasAccess": ["*"],
+    "userRole": ["*"],
     "service": "get_client_id_by_email",
     "tags": ["contact details", "view contact", "contact info", "specific contact", "contact profile"]
   }

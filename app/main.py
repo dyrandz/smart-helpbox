@@ -84,6 +84,7 @@ def build_vector_index():
                 "description": r["description"],
                 "tags": r.get("tags", []),
                 "service": r.get("service"),
+                "userRole": r.get("userRole", []),
                 "hasAccess": r.get("hasAccess", [])
             }
         )
@@ -163,6 +164,14 @@ async def ask_question(query: str):
     try:
         logger.info(f"Received query: {query}")
         
+        # Extract user role from query
+        user_role = None
+        if "user-role:" in query:
+            role_part = query.split("user-role:")[1].split("|")[0].strip()
+            user_role = role_part.upper()
+            # Remove the role part from the query for searching
+            query = query.split("|")[1].split("query:")[1].strip()
+        
         # Step 1: Retrieve relevant content using LlamaIndex
         nodes = retriever.retrieve(query)
         logger.info(f"Found {len(nodes)} relevant nodes")
@@ -180,6 +189,7 @@ async def ask_question(query: str):
                 "url": meta.get('url'),
                 "description": meta.get('description', ''),
                 "service": meta.get('service'),
+                "userRole": meta.get('userRole', []),
                 "hasAccess": meta.get('hasAccess', []),
                 "tags": meta.get('tags', [])
             }
@@ -192,15 +202,19 @@ async def ask_question(query: str):
         prompt = f"""
         Based on the following query: "{query}"
         
+        User Role: {user_role if user_role else 'Not specified'}
+        
         Here are the relevant routes found:
         {context}
         
         Please:
-        1. Find the most relevant route(s)
-        2. For each route, use the exact service name from the route's service field
-        3. Extract the parameter from the query if needed
-        4. Return the suggestions in the specified format
-        5. Provide a short, friendly explanation that feels helpful and natural — imagine you're assisting the user, not giving a technical report.
+        1. Find the most relevant route(s) that match the user's query
+        2. For each route, check if the user's role ({user_role}) has access to it by checking the userRole field
+        3. Only suggest routes that the user has permission to access
+        4. For each route, use the exact service name from the route's service field
+        5. Extract the parameter from the query if needed
+        6. Return the suggestions in the specified format
+        7. Provide a short, friendly explanation that feels helpful and natural — imagine you're assisting the user, not giving a technical report.
         
         Return the response in this exact JSON format:
         {{
