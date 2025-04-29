@@ -4,11 +4,25 @@ import requests, json, os
 import hashlib
 from pathlib import Path
 import faiss
+from pydantic import BaseModel
+from typing import List, Optional
+from services import (
+    get_organisation_id_by_name,
+    get_adviser_id_by_name,
+    get_adviser_id_by_email,
+    get_client_id_by_name,
+    get_client_id_by_email
+)
 
 from llama_index.core import VectorStoreIndex, Document
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.vector_stores.faiss.base import FaissVectorStore
 from llama_index.core.storage.storage_context import StorageContext
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -23,10 +37,14 @@ app.add_middleware(
 
 # Use host.docker.internal when running in Docker, localhost when running locally
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234")
-MODEL = "openchat-3.5-1210"
+MODEL = "mistral-7b-instruct-v0.3"
 ROUTE_DATA_PATH = "routes.json"
 VECTOR_STORE_PATH = "vector_store"
 VECTOR_STORE_HASH_PATH = "vector_store_hash.txt"
+
+# Use Gemini API instead of LM Studio
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "your_gemini_api_key")
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 # Create vector store directory if it doesn't exist
 Path(VECTOR_STORE_PATH).mkdir(exist_ok=True)
@@ -60,7 +78,15 @@ def build_vector_index():
     documents = [
         Document(
             text=f"{r['title']}. {r['description']} Tags: {', '.join(r.get('tags', []))}",
-            metadata={"url": r["url"], "title": r["title"], "description": r["description"], "tags": r.get("tags", [])}
+            metadata={
+                "url": r["url"],
+                "title": r["title"],
+                "description": r["description"],
+                "tags": r.get("tags", []),
+                "service": r.get("service"),
+                "userRole": r.get("userRole", []),
+                "hasAccess": r.get("hasAccess", [])
+            }
         )
         for r in route_data
     ]
@@ -122,172 +148,210 @@ def load_or_build_index():
 
 # Initialize the index with better retrieval parameters
 index = load_or_build_index()
-# Set top_k to 5 to get more potential matches
-retriever = index.as_retriever(similarity_top_k=5)
+# Set top_k to 3 to get more focused matches
+retriever = index.as_retriever(similarity_top_k=3)
 
 @app.post("/rebuild-index")
 def rebuild_index():
     """Endpoint to manually rebuild the vector index"""
     global index, retriever
     index = build_vector_index()
-    retriever = index.as_retriever(similarity_top_k=5)
+    retriever = index.as_retriever(similarity_top_k=3)
     return {"status": "success", "message": "Vector index rebuilt successfully"}
 
 @app.get("/ask")
-def ask(query: str = Query(..., description="User input intent")):
+async def ask_question(query: str):
     try:
-        print(f"\n🔍 Searching for: {query}")
+        logger.info(f"Received query: {query}")
         
-        # Step 1: Retrieve only relevant content
+        # Extract user role from query
+        user_role = None
+        if "user-role:" in query:
+            role_part = query.split("user-role:")[1].split("|")[0].strip()
+            user_role = role_part.upper()
+            # Remove the role part from the query for searching
+            query = query.split("|")[1].split("query:")[1].strip()
+        
+        # Step 1: Retrieve relevant content using LlamaIndex
         nodes = retriever.retrieve(query)
+        logger.info(f"Found {len(nodes)} relevant nodes")
         
-        print(f"\n📚 Found {len(nodes)} matches")
-        for node in nodes:
-            print(f"Match score: {node.score if hasattr(node, 'score') else 'N/A'}")
-            print(f"Content: {node.text}")
-            print("---")
-
         if not nodes:
             return {"llm_response": {"suggestions": [], "explanation": "No relevant pages were found for your request."}}
-
-        # Step 2: Build context string for LLM
+        
+        # Step 2: Build context string for Gemini
         context = ""
         for node in nodes:
             meta = node.metadata
-            tags = meta.get('tags', [])
-            context += f"- Title: {meta.get('title')}\n  URL: {meta.get('url')}\n  Description: {meta.get('description', '')}\n"
-            if tags:
-                context += f"  Tags for matching: {', '.join(tags)}\n"
-            context += "\n"
+            # Include the complete route object
+            route_obj = {
+                "title": meta.get('title'),
+                "url": meta.get('url'),
+                "description": meta.get('description', ''),
+                "service": meta.get('service'),
+                "userRole": meta.get('userRole', []),
+                "hasAccess": meta.get('hasAccess', []),
+                "tags": meta.get('tags', [])
+            }
+            context += f"{json.dumps(route_obj, indent=2)}\n\n"
+        
+        logger.info("Context being sent to Gemini:")
+        logger.info(context)
+        
+        # Create a prompt that includes the routes and instructions for parameter extraction
+        prompt = f"""
+        Based on the following query: "{query}"
+        
+        User Role: {user_role if user_role else 'Not specified'}
+        
+        Here are the relevant routes found:
+        {context}
+        
+        Please:
+        1. Find the most relevant route(s) that match the user's query
+        2. For each route, check if the user's role ({user_role}) has access to it by checking the userRole field
+        3. Only suggest routes that the user has permission to access
+        4. For each route, use the exact service name from the route's service field
+        5. Extract the parameter from the query if needed
+        6. Return the suggestions in the specified format
+        7. Provide a short, friendly explanation that feels helpful and natural — imagine you're assisting the user, not giving a technical report.
+        
+        Return the response in this exact JSON format:
+        {{
+            "suggestions": [
+                {{
+                    "title": "Route title",
+                    "path": "Route URL with :id placeholder (e.g. /app/contacts/:id/summary)",
+                    "description": "Route description",
+                    "service": "Exact service name from the route's service field",
+                    "param": "Extracted parameter (name or email)"
+                }}
+            ],
+            "explanation": "Friendly explanation of why these pages are a good match for the user's request."
+        }}
+        """
 
-        # Step 3: Strict prompt for clean responses
-        prompt = f"""You are a smart helpbox assistant. Your role is to provide quick, precise navigation suggestions.
+        logger.info("Sending prompt to Gemini API:")
+        logger.info(prompt)
 
-User Query: "{query}"
-
-Available Routes (ONLY use the Description field in your response, ignore Tags):
-{context}
-
-CRITICAL INSTRUCTIONS:
-1. Your response must be a valid JSON object with the following structure:
-   {{
-     "suggestions": [
-       {{
-         "title": "Page Title",
-         "url": "/path/to/page",
-         "description": "Page description"
-       }}
-     ],
-     "explanation": "A short, friendly, professional explanation of why you suggested these results."
-   }}
-
-2. The description in your response must ONLY be the text from the Description field
-3. NEVER include Tags in your response
-4. Use Tags for matching - if the query contains keywords that match ANY of the page's tags, consider it a relevant match
-5. DO NOT include any explanations or thinking process outside the 'explanation' property
-6. DO NOT use any markup or special formatting
-7. If no matches are found, return: {{"suggestions": [], "explanation": "No relevant pages were found for your request."}}
-8. IMPORTANT: Ensure your response is a complete, valid JSON object with matching opening and closing braces
-9. CRITICAL: Only suggest pages that are DIRECTLY relevant to the user's query. Do not suggest unrelated pages.
-10. If the query contains specific keywords, only suggest pages where those keywords appear in:
-    - The page title
-    - The page description
-    - The page tags (even though you don't output them)
-
-Example correct response (note the complete JSON structure with matching braces):
-For query "view calendar":
-{{
-  "suggestions": [
-    {{
-      "title": "View Calendar",
-      "url": "/calendar",
-      "description": "Displays the calendar view with all scheduled events and appointments"
-    }},
-    {{
-      "title": "Calendar Settings",
-      "url": "/calendar/settings",
-      "description": "Configure calendar display preferences and notification settings"
-    }}
-  ],
-  "explanation": "These pages were suggested because they are directly related to viewing and managing calendar information, which matches your query exactly."
-}}
-
-For query "no matching pages":
-{{
-  "suggestions": [],
-  "explanation": "No relevant pages were found for your request."
-}}
-"""
-
-        # Step 4: Call LM Studio API
+        # Call Gemini API
         res = requests.post(
-            f"{LM_STUDIO_URL}/v1/chat/completions",
+            f"{GEMINI_API_URL}?key={GEMINI_API_KEY}",
+            headers={"Content-Type": "application/json"},
             json={
-                "model": MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are a strict helpbox assistant. Your response must be a valid JSON object containing an array of suggestions, with no additional text or thinking process."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.2
+                "contents": [{
+                    "parts": [{
+                        "text": prompt
+                    }]
+                }],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "topK": 1,
+                    "topP": 1,
+                    "maxOutputTokens": 1024,
+                }
             }
         )
+        
+        logger.info(f"Gemini API response status: {res.status_code}")
+        if res.status_code != 200:
+            logger.error(f"Gemini API error: {res.text}")
+            raise HTTPException(status_code=500, detail=f"Gemini API error: {res.text}")
+            
         response_json = res.json()
-
-        # Debug output
-        print("\n🧠 Final Prompt Sent to LLM:\n", prompt)
-        print("\n📥 Raw LLM Response:\n", response_json)
-
+        logger.info("Raw Gemini API response:")
+        logger.info(json.dumps(response_json, indent=2))
+        
+        # Extract the response text from Gemini's format
+        candidates = response_json.get("candidates", [])
+        if not candidates:
+            logger.error("No candidates in Gemini response")
+            raise HTTPException(status_code=500, detail="No candidates in Gemini response")
+            
+        content = candidates[0].get("content", {})
+        if not content:
+            logger.error("No content in first candidate")
+            raise HTTPException(status_code=500, detail="No content in first candidate")
+            
+        parts = content.get("parts", [])
+        if not parts:
+            logger.error("No parts in content")
+            raise HTTPException(status_code=500, detail="No parts in content")
+            
+        response_text = parts[0].get("text", "")
+        if not response_text:
+            logger.error("No text in first part")
+            raise HTTPException(status_code=500, detail="No text in first part")
+            
+        logger.info(f"Extracted response text: {response_text}")
+        
+        # Clean up the response text if needed
+        response_text = response_text.strip()
+        # Remove markdown code block if present
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]  # Remove ```json
+        elif response_text.startswith("```"):
+            response_text = response_text[3:]  # Remove ```
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]  # Remove ```
+        response_text = response_text.strip()
+        
+        # Debug log the cleaned response
+        logger.info(f"Cleaned response text: {response_text}")
+        
         try:
-            # Extract the response from LM Studio's format and parse it
-            llm_response = response_json.get("choices", [{}])[0].get("message", {}).get("content", "")
-            print("\n🔍 LLM Content Response:\n", llm_response)
-            
-            if not llm_response:
-                return {"llm_response": {"suggestions": [], "explanation": "No response from the AI model."}}
-            
-            # Clean up the response string
-            llm_response = llm_response.strip()
-            
-            # Ensure the JSON is complete by checking for matching braces
-            brace_count = llm_response.count('{') - llm_response.count('}')
-            if brace_count > 0:
-                # Add missing closing braces
-                llm_response += '}' * brace_count
-            elif brace_count < 0:
-                # Remove extra closing braces
-                llm_response = llm_response[:brace_count]
-            
-            try:
-                # First try to parse as is
-                parsed_response = json.loads(llm_response)
-            except json.JSONDecodeError:
-                # If that fails, try to clean up the response more aggressively
-                print("\n⚠️ Initial parse failed, attempting to clean response")
-                try:
-                    # Remove any whitespace and normalize newlines
-                    llm_response = ' '.join(llm_response.split())
-                    # Handle escaped characters
-                    import codecs
-                    unescaped = codecs.decode(llm_response, 'unicode_escape')
-                    parsed_response = json.loads(unescaped)
-                except (json.JSONDecodeError, ValueError) as e:
-                    print(f"\n❌ JSON Parse Error after cleaning: {str(e)}")
-                    print(f"Raw response that failed to parse: {llm_response}")
-                    return {"llm_response": {"suggestions": [], "explanation": "Failed to parse the AI model response."}}
-            
-            # Validate the response structure
-            if "suggestions" not in parsed_response or "explanation" not in parsed_response:
-                print("\n⚠️ Invalid response structure from LLM")
-                return {"llm_response": {"suggestions": [], "explanation": "Invalid response format from the AI model."}}
-                
-            return {"llm_response": parsed_response}
-            
+            response_data = json.loads(response_text)
         except json.JSONDecodeError as e:
-            print(f"\n❌ JSON Parse Error: {str(e)}")
-            print(f"Raw response that failed to parse: {llm_response}")
-            return {"llm_response": {"suggestions": [], "explanation": "Failed to parse the AI model response."}}
-        except Exception as e:
-            print(f"\n❌ Unexpected Error: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error processing response: {str(e)}")
+            logger.error(f"Failed to parse Gemini response as JSON: {e}")
+            logger.error(f"Response text that failed to parse: {response_text}")
+            raise HTTPException(status_code=500, detail=f"Failed to parse Gemini response: {str(e)}")
+        
+        # Process each suggestion
+        processed_suggestions = []
+        for suggestion in response_data.get("suggestions", []):
+            if suggestion.get("service") and suggestion.get("param"):
+                logger.info(f"Processing suggestion with service: {suggestion['service']}, param: {suggestion['param']}")
+                # Get the ID using the appropriate service
+                if suggestion["service"] == "get_organisation_id_by_name":
+                    id = get_organisation_id_by_name(suggestion["param"])
+                elif suggestion["service"] == "get_adviser_id_by_name":
+                    id = get_adviser_id_by_name(suggestion["param"])
+                elif suggestion["service"] == "get_adviser_id_by_email":
+                    id = get_adviser_id_by_email(suggestion["param"])
+                elif suggestion["service"] == "get_client_id_by_name":
+                    id = get_client_id_by_name(suggestion["param"])
+                elif suggestion["service"] == "get_client_id_by_email":
+                    id = get_client_id_by_email(suggestion["param"])
+                else:
+                    id = None
+                
+                logger.info(f"Retrieved ID: {id}")
+                
+                # Replace :id in the path with the actual ID
+                if id is not None:
+                    suggestion["path"] = suggestion["path"].replace(":id", str(id))
+            
+            processed_suggestions.append(suggestion)
+        
+        response_data["suggestions"] = processed_suggestions
+        return response_data
+
     except Exception as e:
+        logger.error(f"Error processing query: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+class RouteSuggestion(BaseModel):
+    title: str
+    path: str
+    description: str
+
+class Suggestion(BaseModel):
+    title: str
+    path: str
+    description: str
+    service: Optional[str] = None
+    param: Optional[str] = None
+
+class LLMResponse(BaseModel):
+    suggestions: List[Suggestion]
+    explanation: Optional[str] = None
